@@ -25,6 +25,8 @@ import android.util.Log;
 
 import org.thoughtcrime.securesms.R;
 import org.thoughtcrime.securesms.util.ServiceUtil;
+import org.thoughtcrime.securesms.util.concurrent.ListenableFuture;
+import org.thoughtcrime.securesms.util.concurrent.SettableFuture;
 
 import java.io.IOException;
 
@@ -37,44 +39,46 @@ public class OutgoingRinger implements MediaPlayer.OnCompletionListener, MediaPl
 
   private static final String TAG = OutgoingRinger.class.getSimpleName();
 
-  private MediaPlayer mediaPlayer;
-  private int         currentSoundID;
-  private Context     context;
+  private MediaPlayer    mediaPlayer;
+  private int            currentSoundID;
+  private Context        context;
+  private SettableFuture future;
 
   public OutgoingRinger(Context context) {
     this.context = context;
   }
 
-  public void playSonar() {
-    start(R.raw.redphone_sonarping, true);
+  public ListenableFuture playSonar() {
+    return start(R.raw.redphone_sonarping, true);
   }
 
-  public void playHandshake() {
-    start(R.raw.redphone_handshake, true);
+  public ListenableFuture playHandshake() {
+    return start(R.raw.redphone_handshake, true);
   }
 
-  public void playRing() {
-    start(R.raw.redphone_outring, true);
+  public ListenableFuture playRing() {
+    return start(R.raw.redphone_outring, true);
   }
 
-  public void playComplete() {
-    start(R.raw.redphone_completed, false);
+  public ListenableFuture playComplete() {
+    return start(R.raw.redphone_completed, false);
   }
 
-  public void playFailure() {
-    start(R.raw.redphone_failure, false);
+  public ListenableFuture playFailure() {
+    return start(R.raw.redphone_failure, false);
   }
 
-  public void playBusy() {
-    start(R.raw.redphone_busy, true);
+  public ListenableFuture playBusy() {
+    return start(R.raw.redphone_busy, true);
   }
 
-  private void start(int soundID, boolean loop) {
-    if( soundID == currentSoundID ) return;
+  private ListenableFuture start(int soundID, boolean loop) {
+    if (soundID == currentSoundID) return future;
 
     if (mediaPlayer != null) shutdown();
 
     currentSoundID = soundID;
+    future = new SettableFuture();
 
     mediaPlayer = new MediaPlayer();
     mediaPlayer.setAudioStreamType(AudioManager.STREAM_VOICE_CALL);
@@ -91,8 +95,10 @@ public class OutgoingRinger implements MediaPlayer.OnCompletionListener, MediaPl
     } catch (IllegalArgumentException | SecurityException | IllegalStateException | IOException e) {
       Log.w(TAG, e);
       // TODO Auto-generated catch block
-      return;
+      future.set(false);
     }
+
+    return future;
   }
 
   public void stop() {
@@ -114,6 +120,7 @@ public class OutgoingRinger implements MediaPlayer.OnCompletionListener, MediaPl
     mediaPlayer.release();
     mediaPlayer = null;
     currentSoundID = -1;
+    future.set(true);
   }
 
   public void onPrepared(MediaPlayer mp) {
