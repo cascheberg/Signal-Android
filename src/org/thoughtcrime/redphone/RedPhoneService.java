@@ -58,10 +58,12 @@ import org.thoughtcrime.securesms.service.KeyCachingService;
 import org.thoughtcrime.securesms.util.Base64;
 import org.thoughtcrime.securesms.util.ServiceUtil;
 import org.thoughtcrime.securesms.util.TextSecurePreferences;
+import org.thoughtcrime.securesms.util.concurrent.ListenableFuture;
 
 import java.io.IOException;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.util.concurrent.ExecutionException;
 
 import de.greenrobot.event.EventBus;
 
@@ -108,6 +110,19 @@ public class RedPhoneService extends Service implements CallStateListener, CallS
   private UncaughtExceptionHandlerManager uncaughtExceptionHandlerManager;
 
   private IncomingPstnCallListener pstnCallListener;
+
+  private final ListenableFuture.Listener futureListenerTerminate = new ListenableFuture.Listener() {
+    @Override
+    public void onSuccess(Object result) {
+      RedPhoneService.this.terminate();
+    }
+
+    @Override
+    public void onFailure(ExecutionException e) {
+      Log.w(TAG, e);
+      RedPhoneService.this.terminate();
+    }
+  };
 
   @Override
   public void onCreate() {
@@ -447,16 +462,14 @@ public class RedPhoneService extends Service implements CallStateListener, CallS
 
   public void notifyHandshakeFailed() {
     state = STATE_IDLE;
-    outgoingRinger.playFailure();
     sendMessage(Type.HANDSHAKE_FAILED, getRecipient(), null);
-    this.terminate();
+    outgoingRinger.playFailure().addListener(futureListenerTerminate);
   }
 
   public void notifyRecipientUnavailable() {
     state = STATE_IDLE;
-    outgoingRinger.playFailure();
     sendMessage(Type.RECIPIENT_UNAVAILABLE, getRecipient(), null);
-    this.terminate();
+    outgoingRinger.playFailure().addListener(futureListenerTerminate);
   }
 
   public void notifyPerformingHandshake() {
@@ -469,9 +482,8 @@ public class RedPhoneService extends Service implements CallStateListener, CallS
       handleMissedCall(remoteNumber);
 
     state = STATE_IDLE;
-    outgoingRinger.playFailure();
     sendMessage(Type.SERVER_FAILURE, getRecipient(), null);
-    this.terminate();
+    outgoingRinger.playFailure().addListener(futureListenerTerminate);
   }
 
   public void notifyClientFailure() {
@@ -479,9 +491,8 @@ public class RedPhoneService extends Service implements CallStateListener, CallS
       handleMissedCall(remoteNumber);
 
     state = STATE_IDLE;
-    outgoingRinger.playFailure();
     sendMessage(Type.CLIENT_FAILURE, getRecipient(), null);
-    this.terminate();
+    outgoingRinger.playFailure().addListener(futureListenerTerminate);
   }
 
   public void notifyLoginFailed() {
@@ -489,24 +500,23 @@ public class RedPhoneService extends Service implements CallStateListener, CallS
       handleMissedCall(remoteNumber);
 
     state = STATE_IDLE;
-    outgoingRinger.playFailure();
     sendMessage(Type.LOGIN_FAILED, getRecipient(), null);
-    this.terminate();
+    outgoingRinger.playFailure().addListener(futureListenerTerminate);
   }
 
   public void notifyNoSuchUser() {
     sendMessage(Type.NO_SUCH_USER, getRecipient(), null);
-    this.terminate();
+    outgoingRinger.playFailure().addListener(futureListenerTerminate);
   }
 
   public void notifyServerMessage(String message) {
     sendMessage(Type.SERVER_MESSAGE, getRecipient(), message);
-    this.terminate();
+    outgoingRinger.playFailure().addListener(futureListenerTerminate);
   }
 
   public void notifyClientError(String msg) {
     sendMessage(Type.CLIENT_FAILURE, getRecipient(), msg);
-    this.terminate();
+    outgoingRinger.playFailure().addListener(futureListenerTerminate);
   }
 
   public void notifyCallConnecting() {
