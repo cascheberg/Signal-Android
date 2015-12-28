@@ -72,7 +72,7 @@ public class OutgoingRinger implements MediaPlayer.OnCompletionListener, MediaPl
   private void start(int soundID, boolean loop) {
     if( soundID == currentSoundID ) return;
 
-    if (mediaPlayer != null) mediaPlayer.release();
+    if (mediaPlayer != null) shutdown();
 
     currentSoundID = soundID;
 
@@ -101,12 +101,19 @@ public class OutgoingRinger implements MediaPlayer.OnCompletionListener, MediaPl
       mediaPlayer.stop();
     } catch( IllegalStateException e ) {
     }
-    currentSoundID = -1;
+    shutdown();
   }
 
   public void onCompletion(MediaPlayer mp) {
-    //mediaPlayer.release();
-    //mediaPlayer = null;
+    if (mp.isLooping()) return;
+
+    shutdown();
+  }
+
+  private void shutdown() {
+    mediaPlayer.release();
+    mediaPlayer = null;
+    currentSoundID = -1;
   }
 
   public void onPrepared(MediaPlayer mp) {
