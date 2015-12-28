@@ -2,6 +2,7 @@ package org.thoughtcrime.securesms.util.concurrent;
 
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -20,9 +21,12 @@ public class SettableFuture<T> implements Future<T>, ListenableFuture<T> {
   public synchronized boolean cancel(boolean mayInterruptIfRunning) {
     if (!completed && !canceled) {
       canceled = true;
+      completed = true;
+      notifyAllListeners();
       return true;
     }
 
+    completed = true;
     return false;
   }
 
@@ -64,8 +68,9 @@ public class SettableFuture<T> implements Future<T>, ListenableFuture<T> {
   public synchronized T get() throws InterruptedException, ExecutionException {
     while (!completed) wait();
 
-    if (exception != null) throw new ExecutionException(exception);
-    else                   return result;
+    if (canceled)               throw new CancellationException();
+    else if (exception != null) throw new ExecutionException(exception);
+    else                        return result;
   }
 
   @Override
@@ -97,6 +102,7 @@ public class SettableFuture<T> implements Future<T>, ListenableFuture<T> {
     List<Listener<T>> localListeners;
 
     synchronized (this) {
+      notifyAll();
       localListeners = new LinkedList<>(listeners);
     }
 
