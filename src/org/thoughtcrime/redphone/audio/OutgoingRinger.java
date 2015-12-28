@@ -91,6 +91,7 @@ public class OutgoingRinger implements MediaPlayer.OnCompletionListener, MediaPl
     mediaPlayer.setAudioStreamType(AudioManager.STREAM_VOICE_CALL);
     mediaPlayer.setOnCompletionListener(this);
     mediaPlayer.setOnPreparedListener(this);
+    mediaPlayer.setLooping(loopEnabled);
 
     String packageName = context.getPackageName();
     Uri dataUri = Uri.parse("android.resource://" + packageName + "/" + currentSoundID);
@@ -132,8 +133,6 @@ public class OutgoingRinger implements MediaPlayer.OnCompletionListener, MediaPl
   }
 
   public void onPrepared(MediaPlayer mp) {
-    mediaPlayer.setLooping(loopEnabled);
-
     AudioManager am = ServiceUtil.getAudioManager(context);
 
     if (am.isBluetoothScoAvailableOffCall()) {
@@ -145,6 +144,6 @@ public class OutgoingRinger implements MediaPlayer.OnCompletionListener, MediaPl
       }
     }
 
-    mediaPlayer.start();
+    mp.start();
   }
 }
