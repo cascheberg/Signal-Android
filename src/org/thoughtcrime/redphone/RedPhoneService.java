@@ -271,6 +271,7 @@ public class RedPhoneService extends Service implements CallStateListener, CallS
 
   private void handleHangupCall(Intent intent) {
     if (!this.getAndSetTerminated()) {
+      sendMessage(Type.CALL_DISCONNECTED, getRecipient(), null);
       this.terminate();
     }
   }
@@ -387,6 +388,9 @@ public class RedPhoneService extends Service implements CallStateListener, CallS
     }
 
     shutdownAudio();
+
+    sendMessage(Type.TERMINATE_NOW, getRecipient(), null);
+    EventBus.getDefault().removeStickyEvent(RedPhoneEvent.class);
 
     state = STATE_IDLE;
     lockManager.updatePhoneState(LockManager.PhoneState.IDLE);

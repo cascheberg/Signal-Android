@@ -65,6 +65,7 @@ public class RedPhone extends Activity {
   public static final String DENY_ACTION     = RedPhone.class.getCanonicalName() + ".DENY_ACTION";
   public static final String END_CALL_ACTION = RedPhone.class.getCanonicalName() + ".END_CALL_ACTION";
 
+  private boolean           dialogIsShowing;
   private CallScreen        callScreen;
   private BroadcastReceiver bluetoothStateReceiver;
 
@@ -126,6 +127,7 @@ public class RedPhone extends Activity {
   }
 
   private void initializeResources() {
+    dialogIsShowing = false;
     callScreen = (CallScreen)findViewById(R.id.callScreen);
     callScreen.setHangupButtonListener(new HangupButtonListener());
     callScreen.setIncomingCallActionListener(new IncomingCallActionListener());
@@ -161,7 +163,6 @@ public class RedPhone extends Activity {
       startService(intent);
 
       callScreen.setActiveCall(event.getRecipient(), getString(org.thoughtcrime.securesms.R.string.RedPhone_ending_call));
-      delayedFinish();
     }
   }
 
@@ -170,12 +171,6 @@ public class RedPhone extends Activity {
     Intent intent = new Intent(RedPhone.this, RedPhoneService.class);
     intent.setAction(RedPhoneService.ACTION_HANGUP_CALL);
     startService(intent);
-
-    RedPhoneEvent event = EventBus.getDefault().getStickyEvent(RedPhoneEvent.class);
-
-    if (event != null) {
-      RedPhone.this.handleTerminate(event.getRecipient());
-    }
   }
 
   private void handleIncomingCall(@NonNull RedPhoneEvent event) {
@@ -187,13 +182,7 @@ public class RedPhone extends Activity {
   }
 
   private void handleTerminate(@NonNull Recipient recipient /*, int terminationType */) {
-    Log.w(TAG, "handleTerminate called");
-    Log.w(TAG, "Termination Stack:", new Exception());
-
     callScreen.setActiveCall(recipient, getString(R.string.RedPhone_ending_call));
-    EventBus.getDefault().removeStickyEvent(RedPhoneEvent.class);
-
-    delayedFinish();
   }
 
   private void handleCallRinging(@NonNull RedPhoneEvent event) {
@@ -202,8 +191,6 @@ public class RedPhone extends Activity {
 
   private void handleCallBusy(@NonNull RedPhoneEvent event) {
     callScreen.setActiveCall(event.getRecipient(), getString(R.string.RedPhone_busy));
-
-    delayedFinish(BUSY_SIGNAL_DELAY_FINISH);
   }
 
   private void handleCallConnected(@NonNull RedPhoneEvent event) {
@@ -219,12 +206,10 @@ public class RedPhone extends Activity {
 
   private void handleHandshakeFailed(@NonNull RedPhoneEvent event) {
     callScreen.setActiveCall(event.getRecipient(), getString(R.string.RedPhone_handshake_failed));
-    delayedFinish();
   }
 
   private void handleRecipientUnavailable(@NonNull RedPhoneEvent event) {
     callScreen.setActiveCall(event.getRecipient(), getString(R.string.RedPhone_recipient_unavailable));
-    delayedFinish();
   }
 
   private void handlePerformingHandshake(@NonNull RedPhoneEvent event) {
@@ -233,19 +218,19 @@ public class RedPhone extends Activity {
 
   private void handleServerFailure(@NonNull RedPhoneEvent event) {
     callScreen.setActiveCall(event.getRecipient(), getString(R.string.RedPhone_network_failed));
-    delayedFinish();
   }
 
   private void handleClientFailure(final @NonNull RedPhoneEvent event) {
     callScreen.setActiveCall(event.getRecipient(), getString(R.string.RedPhone_client_failed));
     if( event.getExtra() != null && !isFinishing() ) {
+      dialogIsShowing = true;
       AlertDialog.Builder ad = new AlertDialog.Builder(this);
       ad.setTitle(R.string.RedPhone_fatal_error);
       ad.setMessage(event.getExtra());
       ad.setCancelable(false);
       ad.setPositiveButton(android.R.string.ok, new OnClickListener() {
         public void onClick(DialogInterface dialog, int arg) {
-          RedPhone.this.handleTerminate(event.getRecipient());
+          RedPhone.this.delayedFinish(0);
         }
       });
       ad.show();
@@ -254,18 +239,18 @@ public class RedPhone extends Activity {
 
   private void handleLoginFailed(@NonNull RedPhoneEvent event) {
     callScreen.setActiveCall(event.getRecipient(), getString(R.string.RedPhone_login_failed));
-    delayedFinish();
   }
 
   private void handleServerMessage(final @NonNull RedPhoneEvent event) {
     if( isFinishing() ) return; //we're already shutting down, this might crash
+    dialogIsShowing = true;
     AlertDialog.Builder ad = new AlertDialog.Builder(this);
     ad.setTitle(R.string.RedPhone_message_from_the_server);
     ad.setMessage(event.getExtra());
     ad.setCancelable(false);
     ad.setPositiveButton(android.R.string.ok, new OnClickListener() {
       public void onClick(DialogInterface dialog, int arg) {
-        RedPhone.this.handleTerminate(event.getRecipient());
+        RedPhone.this.delayedFinish(0);
       }
     });
     ad.show();
@@ -273,27 +258,23 @@ public class RedPhone extends Activity {
 
   private void handleNoSuchUser(final @NonNull RedPhoneEvent event) {
     if (isFinishing()) return; // XXX Stuart added this check above, not sure why, so I'm repeating in ignorance. - moxie
+    dialogIsShowing = true;
     AlertDialog.Builder dialog = new AlertDialog.Builder(this);
     dialog.setTitle(R.string.RedPhone_number_not_registered);
     dialog.setIconAttribute(R.attr.dialog_alert_icon);
     dialog.setMessage(R.string.RedPhone_the_number_you_dialed_does_not_support_secure_voice);
-    dialog.setCancelable(true);
+    dialog.setCancelable(false);
     dialog.setPositiveButton(R.string.RedPhone_got_it, new OnClickListener() {
       @Override
       public void onClick(DialogInterface dialog, int which) {
-        RedPhone.this.handleTerminate(event.getRecipient());
-      }
-    });
-    dialog.setOnCancelListener(new DialogInterface.OnCancelListener() {
-      @Override
-      public void onCancel(DialogInterface dialog) {
-        RedPhone.this.handleTerminate(event.getRecipient());
+        RedPhone.this.delayedFinish(0);
       }
     });
     dialog.show();
   }
 
   private void delayedFinish() {
+    if (dialogIsShowing) return;
     delayedFinish(STANDARD_DELAY_FINISH);
   }
 
@@ -324,7 +305,8 @@ public class RedPhone extends Activity {
       case OUTGOING_CALL:           handleOutgoingCall(event);             break;
       case CALL_BUSY:               handleCallBusy(event);                 break;
       case LOGIN_FAILED:            handleLoginFailed(event);              break;
-      case CLIENT_FAILURE:			    handleClientFailure(event);            break;
+      case CLIENT_FAILURE:          handleClientFailure(event);            break;
+      case TERMINATE_NOW:           delayedFinish();                       break;
     }
   }
 
