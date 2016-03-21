@@ -79,11 +79,12 @@ public class RedPhoneService extends Service implements CallStateListener, CallS
 
   private static final String TAG = RedPhoneService.class.getSimpleName();
 
-  private static final int STATE_IDLE      = 0;
-  private static final int STATE_RINGING   = 2;
-  private static final int STATE_DIALING   = 3;
-  private static final int STATE_ANSWERING = 4;
-  private static final int STATE_CONNECTED = 5;
+  private static final int STATE_IDLE        = 0;
+  private static final int STATE_RINGING     = 2;
+  private static final int STATE_DIALING     = 3;
+  private static final int STATE_ANSWERING   = 4;
+  private static final int STATE_CONNECTED   = 5;
+  private static final int STATE_TERMINATING = 6;
 
   public static final String EXTRA_REMOTE_NUMBER      = "remote_number";
   public static final String EXTRA_SESSION_DESCRIPTOR = "session_descriptor";
@@ -260,7 +261,6 @@ public class RedPhoneService extends Service implements CallStateListener, CallS
   }
 
   private void handleDenyCall(Intent intent) {
-    state = STATE_IDLE;
     incomingRinger.stop();
     DatabaseFactory.getSmsDatabase(this).insertMissedCall(remoteNumber);
     if(currentCallManager != null) {
@@ -270,7 +270,9 @@ public class RedPhoneService extends Service implements CallStateListener, CallS
   }
 
   private void handleHangupCall(Intent intent) {
-    this.terminate();
+    if (!this.getAndSetTerminated()) {
+      this.terminate();
+    }
   }
 
   private void handleSetMute(Intent intent) {
@@ -289,6 +291,15 @@ public class RedPhoneService extends Service implements CallStateListener, CallS
 
   private boolean isIdle() {
     return state == STATE_IDLE;
+  }
+
+  private synchronized boolean getAndSetTerminated() {
+    if (state == STATE_IDLE || state == STATE_TERMINATING) {
+      return true;
+    }
+
+    state = STATE_TERMINATING;
+    return false;
   }
 
   private void initializeAudio() {
@@ -362,6 +373,8 @@ public class RedPhoneService extends Service implements CallStateListener, CallS
 
   private synchronized void terminate() {
     Log.w(TAG, "termination stack", new Exception());
+    state = STATE_TERMINATING;
+
     lockManager.updatePhoneState(LockManager.PhoneState.PROCESSING);
     NotificationBarManager.setCallEnded(this);
 
@@ -401,15 +414,17 @@ public class RedPhoneService extends Service implements CallStateListener, CallS
 
   public void notifyBusy() {
     Log.w("RedPhoneService", "Got busy signal from responder!");
-    sendMessage(Type.CALL_BUSY, getRecipient(), null);
+    if (!this.getAndSetTerminated()) {
+      sendMessage(Type.CALL_BUSY, getRecipient(), null);
 
-    outgoingRinger.playBusy();
-    serviceHandler.postDelayed(new Runnable() {
-      @Override
-      public void run() {
-        RedPhoneService.this.terminate();
-      }
-    }, RedPhone.BUSY_SIGNAL_DELAY_FINISH);
+      outgoingRinger.playBusy();
+      serviceHandler.postDelayed(new Runnable() {
+        @Override
+        public void run() {
+          RedPhoneService.this.terminate();
+        }
+      }, RedPhone.BUSY_SIGNAL_DELAY_FINISH);
+    }
   }
 
   public void notifyCallRinging() {
@@ -435,22 +450,26 @@ public class RedPhoneService extends Service implements CallStateListener, CallS
     if (state == STATE_RINGING)
       handleMissedCall(remoteNumber, false);
 
-    sendMessage(Type.CALL_DISCONNECTED, getRecipient(), null);
-    this.terminate();
+    if (!this.getAndSetTerminated()) {
+      sendMessage(Type.CALL_DISCONNECTED, getRecipient(), null);
+      this.terminate();
+    }
   }
 
   public void notifyHandshakeFailed() {
-    state = STATE_IDLE;
-    outgoingRinger.playFailure();
-    sendMessage(Type.HANDSHAKE_FAILED, getRecipient(), null);
-    this.terminate();
+    if (!this.getAndSetTerminated()) {
+      outgoingRinger.playFailure();
+      sendMessage(Type.HANDSHAKE_FAILED, getRecipient(), null);
+      this.terminate();
+    }
   }
 
   public void notifyRecipientUnavailable() {
-    state = STATE_IDLE;
-    outgoingRinger.playFailure();
-    sendMessage(Type.RECIPIENT_UNAVAILABLE, getRecipient(), null);
-    this.terminate();
+    if (!this.getAndSetTerminated()) {
+      outgoingRinger.playFailure();
+      sendMessage(Type.RECIPIENT_UNAVAILABLE, getRecipient(), null);
+      this.terminate();
+    }
   }
 
   public void notifyPerformingHandshake() {
@@ -462,45 +481,54 @@ public class RedPhoneService extends Service implements CallStateListener, CallS
     if (state == STATE_RINGING)
       handleMissedCall(remoteNumber, true);
 
-    state = STATE_IDLE;
-    outgoingRinger.playFailure();
-    sendMessage(Type.SERVER_FAILURE, getRecipient(), null);
-    this.terminate();
+    if (!this.getAndSetTerminated()) {
+      outgoingRinger.playFailure();
+      sendMessage(Type.SERVER_FAILURE, getRecipient(), null);
+      this.terminate();
+    }
   }
 
   public void notifyClientFailure() {
     if (state == STATE_RINGING)
       handleMissedCall(remoteNumber, false);
 
-    state = STATE_IDLE;
-    outgoingRinger.playFailure();
-    sendMessage(Type.CLIENT_FAILURE, getRecipient(), null);
-    this.terminate();
+    if (!this.getAndSetTerminated()) {
+      outgoingRinger.playFailure();
+      sendMessage(Type.CLIENT_FAILURE, getRecipient(), null);
+      this.terminate();
+    }
   }
 
   public void notifyLoginFailed() {
     if (state == STATE_RINGING)
       handleMissedCall(remoteNumber, true);
 
-    state = STATE_IDLE;
-    outgoingRinger.playFailure();
-    sendMessage(Type.LOGIN_FAILED, getRecipient(), null);
-    this.terminate();
+    if (!this.getAndSetTerminated()) {
+      outgoingRinger.playFailure();
+      sendMessage(Type.LOGIN_FAILED, getRecipient(), null);
+      this.terminate();
+    }
   }
 
   public void notifyNoSuchUser() {
-    sendMessage(Type.NO_SUCH_USER, getRecipient(), null);
-    this.terminate();
+    if (!this.getAndSetTerminated()) {
+      sendMessage(Type.NO_SUCH_USER, getRecipient(), null);
+      this.terminate();
+    }
   }
 
   public void notifyServerMessage(String message) {
-    sendMessage(Type.SERVER_MESSAGE, getRecipient(), message);
-    this.terminate();
+    if (!this.getAndSetTerminated()) {
+      sendMessage(Type.SERVER_MESSAGE, getRecipient(), message);
+      this.terminate();
+    }
   }
 
   public void notifyClientError(String msg) {
-    sendMessage(Type.CLIENT_FAILURE, getRecipient(), msg);
-    this.terminate();
+    if (!this.getAndSetTerminated()) {
+      sendMessage(Type.CLIENT_FAILURE, getRecipient(), msg);
+      this.terminate();
+    }
   }
 
   public void notifyCallConnecting() {
@@ -537,6 +565,7 @@ public class RedPhoneService extends Service implements CallStateListener, CallS
       case STATE_RINGING:
       case STATE_ANSWERING:
       case STATE_CONNECTED:
+      case STATE_TERMINATING:
         return true;
       default:
         Log.e(TAG, "Unhandled call state: " + state);
